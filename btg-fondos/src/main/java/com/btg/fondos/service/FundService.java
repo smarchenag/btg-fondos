@@ -10,6 +10,11 @@ import com.btg.fondos.repository.ClientRepository;
 import com.btg.fondos.repository.FundRepository;
 import com.btg.fondos.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,6 +29,7 @@ public class FundService {
     private final ClientRepository clientRepository;
     private final TransactionRepository transactionRepository;
     private final NotificationService notificationService;
+    private final MongoTemplate mongoTemplate;
 
     public List<Fund> getAllFunds() {
         return fundRepository.findAll();
@@ -33,27 +39,41 @@ public class FundService {
         Fund fund = fundRepository.findById(fundId)
                 .orElseThrow(() -> new FundNotFoundException(fundId));
 
-        Client client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new IllegalArgumentException("Cliente no encontrado"));
-
-        boolean alreadySubscribed = client.getSubscriptions().stream()
-                .anyMatch(s -> s.getFundId().equals(fundId));
-        if (alreadySubscribed) {
-            throw new AlreadySubscribedException(fund.getName());
-        }
-
-        if (client.getBalance() < fund.getMinimumAmount()) {
-            throw new InsufficientBalanceException(fund.getName());
-        }
-
-        client.setBalance(client.getBalance() - fund.getMinimumAmount());
-        client.getSubscriptions().add(Subscription.builder()
+        Subscription newSubscription = Subscription.builder()
                 .fundId(fund.getId())
                 .fundName(fund.getName())
                 .amount(fund.getMinimumAmount())
                 .subscribedAt(LocalDateTime.now())
-                .build());
-        clientRepository.save(client);
+                .build();
+
+        // Operación atómica: verifica condiciones y actualiza en un solo comando
+        // Condición: el cliente existe, tiene saldo suficiente, y NO está suscrito al fondo
+        Query query = new Query(Criteria.where("_id").is(clientId)
+                .and("balance").gte(fund.getMinimumAmount())
+                .and("subscriptions.fundId").ne(fundId));
+
+        Update update = new Update()
+                .inc("balance", -fund.getMinimumAmount())
+                .push("subscriptions", newSubscription);
+
+        Client updated = mongoTemplate.findAndModify(
+                query,
+                update,
+                FindAndModifyOptions.options().returnNew(true),
+                Client.class
+        );
+
+        if (updated == null) {
+            // El findAndModify no encontró documento que cumpla las condiciones.
+            // Determinar la razón exacta para retornar el error apropiado.
+            Client client = clientRepository.findById(clientId)
+                    .orElseThrow(() -> new IllegalArgumentException("Cliente no encontrado"));
+
+            if (client.getSubscriptions().stream().anyMatch(s -> s.getFundId().equals(fundId))) {
+                throw new AlreadySubscribedException(fund.getName());
+            }
+            throw new InsufficientBalanceException(fund.getName());
+        }
 
         Transaction transaction = Transaction.builder()
                 .id(UUID.randomUUID().toString())
@@ -66,7 +86,7 @@ public class FundService {
                 .build();
         transactionRepository.save(transaction);
 
-        notificationService.sendSubscriptionNotification(client, fund.getName(), fund.getMinimumAmount());
+        notificationService.sendSubscriptionNotification(updated, fund.getName(), fund.getMinimumAmount());
 
         return transaction;
     }
@@ -75,6 +95,7 @@ public class FundService {
         Fund fund = fundRepository.findById(fundId)
                 .orElseThrow(() -> new FundNotFoundException(fundId));
 
+        // Primero obtenemos la suscripción para conocer el monto a reintegrar
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> new IllegalArgumentException("Cliente no encontrado"));
 
@@ -83,9 +104,26 @@ public class FundService {
                 .findFirst()
                 .orElseThrow(() -> new NotSubscribedException(fund.getName()));
 
-        client.setBalance(client.getBalance() + subscription.getAmount());
-        client.getSubscriptions().removeIf(s -> s.getFundId().equals(fundId));
-        clientRepository.save(client);
+        // Operación atómica: elimina la suscripción y reintegra el saldo en un solo comando
+        // Condición: el cliente existe y SÍ está suscrito al fondo
+        Query query = new Query(Criteria.where("_id").is(clientId)
+                .and("subscriptions.fundId").is(fundId));
+
+        Update update = new Update()
+                .inc("balance", subscription.getAmount())
+                .pull("subscriptions", new Query(Criteria.where("fundId").is(fundId)));
+
+        Client updated = mongoTemplate.findAndModify(
+                query,
+                update,
+                FindAndModifyOptions.options().returnNew(true),
+                Client.class
+        );
+
+        if (updated == null) {
+            // La suscripción fue cancelada por otra request concurrente
+            throw new NotSubscribedException(fund.getName());
+        }
 
         Transaction transaction = Transaction.builder()
                 .id(UUID.randomUUID().toString())
@@ -98,7 +136,7 @@ public class FundService {
                 .build();
         transactionRepository.save(transaction);
 
-        notificationService.sendCancellationNotification(client, fund.getName(), subscription.getAmount());
+        notificationService.sendCancellationNotification(updated, fund.getName(), subscription.getAmount());
 
         return transaction;
     }
