@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: BTG Pactual - Plataforma de Fondos de Inversión (ECS Fargate + DocumentDB)
+Description: technical-test-fondos - API REST de Gestión de Fondos de Inversión (ECS Fargate + DocumentDB)
 
 Parameters:
   EnvironmentName:
@@ -16,7 +16,7 @@ Parameters:
     MinLength: 32
   DocDBMasterUser:
     Type: String
-    Default: btgadmin
+    Default: dbadmin
     Description: Usuario master de DocumentDB
   DocDBMasterPassword:
     Type: String
@@ -26,7 +26,7 @@ Parameters:
   SesSenderEmail:
     Type: String
     Description: Email verificado en SES para enviar notificaciones
-    Default: noreply@btgfondos.com
+    Default: noreply@example.com
 
 Resources:
   # ==================== VPC ====================

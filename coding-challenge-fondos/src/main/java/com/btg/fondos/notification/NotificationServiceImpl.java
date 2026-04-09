@@ -20,7 +20,7 @@ public class NotificationServiceImpl implements NotificationService {
     public NotificationServiceImpl(
             @Nullable SesClient sesClient,
             @Value("${app.ses.enabled:false}") boolean sesEnabled,
-            @Value("${app.ses.sender-email:noreply@btgfondos.com}") String senderEmail) {
+            @Value("${app.ses.sender-email:noreply@example.com}") String senderEmail) {
         this.sesClient = sesClient;
         this.sesEnabled = sesEnabled;
         this.senderEmail = senderEmail;

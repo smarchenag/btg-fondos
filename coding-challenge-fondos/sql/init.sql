@@ -1,6 +1,26 @@
 -- =============================================================================
--- Base de datos BTG - Parte 2: Creación de tablas y datos de prueba
+-- Base de datos BTG - Parte 2: Schema, tablas, constantes y datos de prueba
 -- =============================================================================
+-- Nota: la base de datos 'btg' es creada por Docker Compose (POSTGRES_DB=btg).
+-- Este script se ejecuta automáticamente dentro de dicha base de datos.
+-- =============================================================================
+
+-- ===================== SCHEMA =====================
+
+CREATE SCHEMA IF NOT EXISTS btg;
+SET search_path TO btg;
+
+-- ===================== CONSTANTES (tablas de referencia) =====================
+
+CREATE TABLE tipo_producto (
+    id     SMALLINT PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL UNIQUE
+);
+
+INSERT INTO tipo_producto (id, nombre) VALUES
+(1, 'Ahorro'),
+(2, 'Inversión'),
+(3, 'Crédito');
 
 -- ===================== TABLAS =====================
 
@@ -18,9 +38,9 @@ CREATE TABLE sucursal (
 );
 
 CREATE TABLE producto (
-    id           NUMERIC PRIMARY KEY,
-    nombre       VARCHAR NOT NULL,
-    tipoProducto VARCHAR NOT NULL
+    id              NUMERIC  PRIMARY KEY,
+    nombre          VARCHAR  NOT NULL,
+    idTipoProducto  SMALLINT NOT NULL REFERENCES tipo_producto(id)
 );
 
 CREATE TABLE inscripcion (
@@ -61,12 +81,12 @@ INSERT INTO sucursal (id, nombre, ciudad) VALUES
 (5, 'Sucursal Caribe',  'Barranquilla');
 
 -- Productos
-INSERT INTO producto (id, nombre, tipoProducto) VALUES
-(1, 'Cuenta de Ahorro',   'Ahorro'),
-(2, 'CDT 90 días',        'Inversión'),
-(3, 'Tarjeta de Crédito', 'Crédito'),
-(4, 'Fondo de Inversión', 'Inversión'),
-(5, 'Cuenta Corriente',   'Ahorro');
+INSERT INTO producto (id, nombre, idTipoProducto) VALUES
+(1, 'Cuenta de Ahorro',   1),
+(2, 'CDT 90 días',        2),
+(3, 'Tarjeta de Crédito', 3),
+(4, 'Fondo de Inversión', 2),
+(5, 'Cuenta Corriente',   1);
 
 -- Disponibilidad (qué productos ofrece cada sucursal)
 -- Producto 1 (Cuenta de Ahorro): disponible en TODAS las sucursales

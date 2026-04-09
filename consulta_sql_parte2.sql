@@ -1,4 +1,6 @@
 -- Prueba Técnica BTG Pactual - Parte 2
+SET search_path TO btg;
+
 SELECT DISTINCT c.nombre
 FROM cliente c
 JOIN inscripcion i ON i.idCliente = c.id

@@ -4,8 +4,8 @@ services:
     container_name: btg-postgres
     environment:
       POSTGRES_DB: btg
-      POSTGRES_USER: btg_user
-      POSTGRES_PASSWORD: btg_password
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
     ports:
       - "5432:5432"
     volumes:

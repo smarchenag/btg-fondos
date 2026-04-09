@@ -1,0 +1,190 @@
+================================================================================
+  INSTRUCCIONES DE DESPLIEGUE EN AWS — technical-test-fondos
+================================================================================
+
+PRERREQUISITOS
+--------------
+  - AWS CLI instalado y configurado (ejecutar: aws configure)
+  - Docker instalado y corriendo
+  - Usuario IAM con permisos sobre: CloudFormation, EC2, ECS, ECR, ELB,
+    DocumentDB, IAM, CloudWatch Logs, SES
+  - PowerShell (Windows) o PowerShell Core (Linux/Mac)
+
+RECURSOS QUE SE CREAN EN AWS
+------------------------------
+  - VPC con 2 subnets públicas + 2 subnets privadas
+  - Internet Gateway + NAT Gateway
+  - ALB (Application Load Balancer) — público, puerto 80
+  - ECS Fargate — Spring Boot API, puerto 8080 (subred privada)
+  - Amazon DocumentDB — MongoDB 5.0 (subred privada)
+  - AWS SES — envío de emails de notificación
+  - Amazon ECR — repositorio de la imagen Docker
+  - IAM Roles — ECS Execution Role + Task Role
+  - CloudWatch Logs — logs del contenedor (retención 14 días)
+
+================================================================================
+  OPCIÓN A — SCRIPT AUTOMATIZADO (RECOMENDADO)
+================================================================================
+
+  El script deploy.ps1 automatiza todo el ciclo:
+  ECR → Docker Build → Push → CloudFormation → URL final
+
+  PRIMERA VEZ (crea toda la infraestructura desde cero):
+  -------------------------------------------------------
+    cd btg-fondos
+    .\deploy.ps1 -SenderEmail "tu-email@dominio.com"
+
+    El script pedirá interactivamente:
+      · JWT Secret        → mínimo 32 caracteres, usar valor aleatorio seguro
+      · DocDB Password    → mínimo 8 caracteres
+
+  ACTUALIZACIONES POSTERIORES (solo rebuild y redeploy):
+  -------------------------------------------------------
+    .\deploy.ps1
+
+    Reutiliza automáticamente el JWT Secret y DocDB Password existentes.
+
+  PARÁMETROS OPCIONALES DEL SCRIPT:
+  -----------------------------------
+    -StackName      (default: btg-fondos)      Nombre del stack CloudFormation
+    -Region         (default: us-east-1)       Región AWS
+    -RepoName       (default: btg-fondos)      Nombre del repositorio ECR
+    -ImageTag       (default: latest)          Tag de la imagen Docker
+    -SenderEmail    (default: vacío)           Email verificado en SES
+    -JwtSecret      (default: pregunta)        Solo necesario en la primera vez
+    -DocDBPassword  (default: pregunta)        Solo necesario en la primera vez
+
+  TIEMPO ESTIMADO: ~20 minutos en la primera ejecución.
+
+================================================================================
+  OPCIÓN B — PASO A PASO MANUAL (PowerShell)
+================================================================================
+
+  PASO 1 — Definir variables de entorno
+  ---------------------------------------
+    $AWS_ACCOUNT_ID = aws sts get-caller-identity --query Account --output text
+    $AWS_REGION     = "us-east-1"
+    $REPO_NAME      = "btg-fondos"
+    $ECR_URI        = "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME"
+
+  PASO 2 — Crear repositorio ECR
+  --------------------------------
+    aws ecr create-repository --repository-name $REPO_NAME --region $AWS_REGION
+
+    (Si ya existe, omitir este paso)
+
+  PASO 3 — Autenticar Docker con ECR
+  ------------------------------------
+    aws ecr get-login-password --region $AWS_REGION |
+      docker login --username AWS --password-stdin `
+      "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+  PASO 4 — Build, tag y push de la imagen Docker
+  ------------------------------------------------
+    docker build -t ${REPO_NAME}:latest .
+    docker tag  ${REPO_NAME}:latest "${ECR_URI}:latest"
+    docker push "${ECR_URI}:latest"
+
+  PASO 5 — Verificar email en AWS SES (para notificaciones)
+  -----------------------------------------------------------
+    aws ses verify-email-identity `
+      --email-address tu-email@dominio.com `
+      --region $AWS_REGION
+
+    ⚠️  Confirmar el enlace de verificación que llega al correo antes de
+        continuar. En modo sandbox de SES, el email destinatario también
+        debe estar verificado.
+
+  PASO 6 — Crear el stack de CloudFormation
+  -------------------------------------------
+    aws cloudformation create-stack `
+      --stack-name btg-fondos `
+      --template-body file://cloudformation.yml `
+      --capabilities CAPABILITY_NAMED_IAM `
+      --parameters `
+        "ParameterKey=AppImage,ParameterValue=${ECR_URI}:latest" `
+        "ParameterKey=JwtSecret,ParameterValue=<SECRET_JWT_MIN_32_CHARS>" `
+        "ParameterKey=DocDBMasterPassword,ParameterValue=<DB_PASSWORD_MIN_8>" `
+        "ParameterKey=SesSenderEmail,ParameterValue=tu-email@dominio.com" `
+      --region $AWS_REGION
+
+    ⚠️  Reemplazar los valores entre < > con credenciales propias.
+        JwtSecret: mínimo 32 caracteres, preferir un UUID o hash aleatorio.
+        DocDBMasterPassword: mínimo 8 caracteres, incluir letras y números.
+
+  PASO 7 — Esperar a que el stack se cree (~15-20 minutos)
+  ----------------------------------------------------------
+    aws cloudformation wait stack-create-complete `
+      --stack-name btg-fondos `
+      --region $AWS_REGION
+
+  PASO 8 — Obtener la URL pública de la API
+  -------------------------------------------
+    aws cloudformation describe-stacks `
+      --stack-name btg-fondos `
+      --query "Stacks[0].Outputs[?OutputKey=='APIEndpoint'].OutputValue" `
+      --output text `
+      --region $AWS_REGION
+
+  PASO 9 — Verificar que la API responde
+  ----------------------------------------
+    curl http://<ALB_URL>/health
+    # Respuesta esperada: {"status":"UP"}
+
+================================================================================
+  ACTUALIZAR LA APLICACIÓN (después de cambios en el código)
+================================================================================
+
+  El script deploy.ps1 maneja esto automáticamente.
+  Para hacerlo manual:
+
+    # 1. Rebuild y push
+    docker build -t btg-fondos:latest .
+    docker tag  btg-fondos:latest "${ECR_URI}:latest"
+    docker push "${ECR_URI}:latest"
+
+    # 2. Obtener nombres del cluster y servicio ECS
+    $CLUSTER = aws cloudformation describe-stack-resource `
+      --stack-name btg-fondos `
+      --logical-resource-id ECSCluster `
+      --query "StackResourceDetail.PhysicalResourceId" `
+      --output text --region $AWS_REGION
+
+    $SERVICE = aws cloudformation describe-stack-resource `
+      --stack-name btg-fondos `
+      --logical-resource-id ECSService `
+      --query "StackResourceDetail.PhysicalResourceId" `
+      --output text --region $AWS_REGION
+
+    # 3. Forzar redespliegue
+    aws ecs update-service `
+      --cluster $CLUSTER `
+      --service  $SERVICE `
+      --force-new-deployment `
+      --region $AWS_REGION
+
+================================================================================
+  ELIMINAR TODOS LOS RECURSOS AWS (evitar costos)
+================================================================================
+
+  # 1. Eliminar stack CloudFormation (VPC, ECS, DocumentDB, ALB, etc.)
+  aws cloudformation delete-stack --stack-name btg-fondos --region us-east-1
+  aws cloudformation wait stack-delete-complete --stack-name btg-fondos --region us-east-1
+
+  # 2. Eliminar repositorio ECR y sus imágenes
+  aws ecr delete-repository --repository-name btg-fondos --force --region us-east-1
+
+  ⚠️  El NAT Gateway genera costo por hora. Eliminar el stack detiene el cobro.
+
+================================================================================
+  NOTAS ADICIONALES
+================================================================================
+
+  · La API tarda ~2 minutos en iniciar tras el redespliegue de ECS.
+  · Los logs del contenedor están en CloudWatch Logs:
+      /ecs/btg-fondos
+  · En modo sandbox de SES, verificar también el email destinatario:
+      aws ses verify-email-identity --email-address destino@dominio.com --region us-east-1
+  · El token JWT expira en 24h por defecto (configurable con JWT_EXPIRATION_MS).
+
+================================================================================

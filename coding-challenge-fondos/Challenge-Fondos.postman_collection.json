@@ -1,0 +1,242 @@
+{
+  "info": {
+    "name": "BTG Pactual - Gestión de Fondos",
+    "description": "Colección Postman para la API REST de gestión de fondos de inversión BTG Pactual.\n\nFlujo de uso:\n1. Ejecutar **Registrar usuario** o **Login** → el token JWT se guarda automáticamente.\n2. El resto de peticiones protegidas usan ese token via la variable `{{token}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "description": "URL base de la API. Cambia a la URL del ALB para apuntar a AWS."
+    },
+    {
+      "key": "token",
+      "value": "",
+      "description": "JWT obtenido al hacer login. Se llena automáticamente con el script del endpoint Login."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica que la API está corriendo."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Registrar usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.token) {",
+                  "        pm.collectionVariables.set('token', json.token);",
+                  "        console.log('Token guardado automáticamente');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Juan Pérez\",\n  \"email\": \"juan@test.com\",\n  \"password\": \"Password1!\",\n  \"notificationPreference\": \"EMAIL\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Registra un nuevo usuario. notificationPreference puede ser EMAIL o SMS.\n\nLa contraseña debe tener mínimo 8 caracteres con mayúscula, minúscula, número y carácter especial (@$!%*?&).\n\nEl token JWT devuelto se guarda automáticamente en la variable `token`."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.token) {",
+                  "        pm.collectionVariables.set('token', json.token);",
+                  "        console.log('Token guardado automáticamente');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"juan@test.com\",\n  \"password\": \"Password1!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Autentica al usuario y retorna un JWT. El token se guarda automáticamente en la variable `token` para las demás peticiones."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Fondos",
+      "item": [
+        {
+          "name": "Listar fondos disponibles",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/funds",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "funds"]
+            },
+            "description": "Retorna los 5 fondos disponibles con nombre, monto mínimo y categoría."
+          },
+          "response": []
+        },
+        {
+          "name": "Suscribirse a fondo",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/funds/1/subscribe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "funds", "1", "subscribe"]
+            },
+            "description": "Suscribe al cliente autenticado al fondo con ID 1 (FPV_BTG_PACTUAL_RECAUDADORA, mínimo COP $75.000).\n\nFondos disponibles:\n- 1: FPV_BTG_PACTUAL_RECAUDADORA — $75.000\n- 2: FPV_BTG_PACTUAL_ECOPETROL — $125.000\n- 3: DEUDAPRIVADA — $50.000\n- 4: FDO-ACCIONES — $250.000\n- 5: FPV_BTG_PACTUAL_DINAMICA — $100.000\n\nSi hay saldo insuficiente, retorna 400 con mensaje: \"No tiene saldo disponible para vincularse al fondo <nombre>\"."
+          },
+          "response": []
+        },
+        {
+          "name": "Suscribirse a fondo - saldo insuficiente",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/funds/4/subscribe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "funds", "4", "subscribe"]
+            },
+            "description": "Intenta suscribirse al fondo 4 (FDO-ACCIONES, mínimo COP $250.000). Si ya se suscribió a fondos anteriores y el saldo es insuficiente, retorna error 400."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancelar suscripción",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/funds/1/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "funds", "1", "cancel"]
+            },
+            "description": "Cancela la suscripción al fondo 1 y devuelve el monto al saldo del cliente."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Transacciones",
+      "item": [
+        {
+          "name": "Historial de transacciones",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transactions"]
+            },
+            "description": "Retorna el historial de todas las transacciones (aperturas y cancelaciones) del cliente autenticado. Cada transacción tiene un ID único (UUID)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cliente",
+      "item": [
+        {
+          "name": "Ver perfil y saldo",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/clients/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "clients", "me"]
+            },
+            "description": "Retorna el perfil del cliente autenticado: nombre, email, saldo actual, preferencia de notificación y lista de suscripciones activas."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
