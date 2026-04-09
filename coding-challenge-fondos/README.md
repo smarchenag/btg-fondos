@@ -6,7 +6,7 @@
 
 ## Descripción
 
-API REST para la gestión de fondos de inversión de BTG Pactual. Permite a los clientes suscribirse y cancelar fondos, consultar historial de transacciones y recibir notificaciones por email (AWS SES) o SMS.
+API REST para la gestión de fondos de inversión. Permite a los clientes suscribirse y cancelar fondos, consultar historial de transacciones y recibir notificaciones por email (AWS SES) o SMS.
 
 ## Stack Tecnológico
 
