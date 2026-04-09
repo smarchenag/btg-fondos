@@ -1,4 +1,8 @@
-# BTG Pactual - Plataforma de Gestión de Fondos de Inversión
+# technical-test-fondos
+
+**Prueba técnica:** Plataforma de Gestión de Fondos de Inversión
+
+> ⚠️ **Disclaimer:** Este repositorio no corresponde a código oficial de BTG Pactual. Es únicamente una prueba técnica personal desarrollada como parte de un proceso de selección. Ningún dato, credencial ni infraestructura aquí descrita tiene relación con los sistemas reales de la empresa.
 
 ## Descripción
 
@@ -33,15 +37,26 @@ controller/ → service/ → repository/ → MongoDB/DocumentDB
 ```
 
 ### Arquitectura AWS
+
+```mermaid
+graph TD
+    Usuario["👤 Usuario / Cliente"]
+    ALB["☁️ ALB · Application Load Balancer · puerto 80 público"]
+    ECS["🐳 ECS Fargate · Spring Boot API · puerto 8080 privado"]
+    DocDB["🍃 Amazon DocumentDB · MongoDB 5.0 · puerto 27017 privado"]
+    SES["📧 AWS SES · Notificaciones email"]
+    ECR["📦 Amazon ECR · Imagen Docker"]
+    CWL["📋 CloudWatch Logs"]
+
+    Usuario -->|HTTP| ALB
+    ALB -->|forward| ECS
+    ECS -->|MongoDB Wire Protocol| DocDB
+    ECS -->|SES API| SES
+    ECS -->|pull image| ECR
+    ECS -->|stdout logs| CWL
 ```
-Internet → ALB (público, puerto 80)
-              ↓
-         ECS Fargate (subred privada, puerto 8080)
-              ↓
-         DocumentDB (subred privada, puerto 27017)
-              ↓
-         AWS SES (envío de emails)
-```
+
+> **Justificación:** ECS Fargate elimina la administración de servidores. DocumentDB es compatible con el driver MongoDB y escala de forma gestionada. La VPC con subnets privadas garantiza que DocumentDB nunca quede expuesto a internet.
 
 ## Modelo de Datos
 
@@ -120,7 +135,7 @@ La API estará disponible en `http://localhost:8080`.
 | `CORS_ALLOWED_ORIGINS` | `*` | Orígenes permitidos para CORS |
 | `INITIAL_BALANCE` | `500000` | Saldo inicial de nuevos clientes |
 | `SES_ENABLED` | `false` | Habilitar envío real de emails via SES |
-| `SES_SENDER_EMAIL` | `noreply@btgfondos.com` | Email remitente (debe estar verificado en SES) |
+| `SES_SENDER_EMAIL` | `noreply@example.com` | Email remitente (debe estar verificado en SES) |
 | `SES_REGION` | `us-east-1` | Región de AWS SES |
 
 ### Ejemplo de uso con cURL
